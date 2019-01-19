@@ -1,4 +1,4 @@
-﻿/*
+/*
  
   This Source Code Form is subject to the terms of the Mozilla Public
   License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -27,6 +27,7 @@ namespace OpenHardwareMonitor.Hardware {
     private float? currentValue;
     private float? minValue;
     private float? maxValue;
+    private readonly List<SensorValue> values = new List<SensorValue>();
     private readonly ISettings settings;
     private IControl control;
     
@@ -129,6 +130,11 @@ namespace OpenHardwareMonitor.Hardware {
     }
 
     public IEnumerable<SensorValue> Values { get; } = Enumerable.Empty<SensorValue>();
+
+    public TimeSpan ValuesTimeWindow {
+      get => TimeSpan.Zero;
+      set { }
+    }
 
     public void Accept(IVisitor visitor) {
       if (visitor == null)
