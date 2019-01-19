@@ -11,8 +11,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
-using System.IO.Compression;
+using System.Linq;
 
 namespace OpenHardwareMonitor.Hardware {
 
@@ -28,7 +27,6 @@ namespace OpenHardwareMonitor.Hardware {
     private float? currentValue;
     private float? minValue;
     private float? maxValue;
-    private readonly List<SensorValue> values = new List<SensorValue>();
     private readonly ISettings settings;
     private IControl control;
     
@@ -63,72 +61,6 @@ namespace OpenHardwareMonitor.Hardware {
       this.defaultName = name; 
       this.name = settings.GetValue(
         new Identifier(Identifier, "name").ToString(), name);
-
-      GetSensorValuesFromSettings();      
-
-      hardware.Closing += delegate(IHardware h) {
-        SetSensorValuesToSettings();
-      };
-    }
-
-    private void SetSensorValuesToSettings() {
-      using (MemoryStream m = new MemoryStream()) {
-        using (GZipStream c = new GZipStream(m, CompressionMode.Compress))
-        using (BufferedStream b = new BufferedStream(c, 65536))
-        using (BinaryWriter writer = new BinaryWriter(b)) {
-          long t = 0;
-          foreach (SensorValue sensorValue in values) {
-            long v = sensorValue.Time.ToBinary();
-            writer.Write(v - t);
-            t = v;
-            writer.Write(sensorValue.Value);
-          }
-          writer.Flush();
-        }
-        settings.SetValue(new Identifier(Identifier, "values").ToString(),
-          Convert.ToBase64String(m.ToArray()));
-      }
-    }
-
-    private void GetSensorValuesFromSettings() {
-      string name = new Identifier(Identifier, "values").ToString();
-      string s = settings.GetValue(name, null);
-
-      try {
-        byte[] array = Convert.FromBase64String(s);
-        s = null;
-        DateTime now = DateTime.UtcNow;
-        using (MemoryStream m = new MemoryStream(array))
-        using (GZipStream c = new GZipStream(m, CompressionMode.Decompress))
-        using (BinaryReader reader = new BinaryReader(c)) {
-          try {
-            long t = 0;
-            while (true) {
-              t += reader.ReadInt64();
-              DateTime time = DateTime.FromBinary(t);
-              if (time > now)
-                break;
-              float value = reader.ReadSingle();
-              AppendValue(value, time);
-            }
-          } catch (EndOfStreamException) { }
-        }
-      } catch { }
-      if (values.Count > 0)
-        AppendValue(float.NaN, DateTime.UtcNow);
-
-      // remove the value string from the settings to reduce memory usage
-      settings.Remove(name);
-    }
-
-    private void AppendValue(float value, DateTime time) {
-      if (values.Count >= 2 && values[values.Count - 1].Value == value && 
-        values[values.Count - 2].Value == value) {
-        values[values.Count - 1] = new SensorValue(value, time);
-        return;
-      } 
-
-      values.Add(new SensorValue(value, time));
     }
 
     public IHardware Hardware {
@@ -177,20 +109,6 @@ namespace OpenHardwareMonitor.Hardware {
         return currentValue; 
       }
       set {
-        DateTime now = DateTime.UtcNow;
-        while (values.Count > 0 && (now - values[0].Time).TotalDays > 1)
-          values.RemoveAt(0);
-
-        if (value.HasValue) {
-          sum += value.Value;
-          count++;
-          if (count == 4) {
-            AppendValue(sum / count, now);
-            sum = 0;
-            count = 0;
-          }
-        }
-
         this.currentValue = value;
         if (minValue > value || !minValue.HasValue)
           minValue = value;
@@ -210,9 +128,7 @@ namespace OpenHardwareMonitor.Hardware {
       maxValue = null;
     }
 
-    public IEnumerable<SensorValue> Values {
-      get { return values; }
-    }    
+    public IEnumerable<SensorValue> Values { get; } = Enumerable.Empty<SensorValue>();
 
     public void Accept(IVisitor visitor) {
       if (visitor == null)
